@@ -127,7 +127,7 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             query_vol_copy = query_vol_copy * m2
 
         # query_vol has the bigger pixel size ---> downsample ref_vol to N_ref_ds and then crop it to N_query:
-        N_ref_ds = math.floor(N_ref * (pixel_ref / pixel_query))
+        N_ref_ds = round(N_ref * (pixel_ref / pixel_query))
 
         # Downsample ref_vol from N_ref to N_ref_ds:
         print_to_log(log,
@@ -183,11 +183,11 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             ref_vol_copy = ref_vol_copy * m1
             query_vol_copy = query_vol_copy * m2
 
-        N_query_ds = math.floor(N_query * (pixel_query / pixel_ref))
+        N_query_ds = round(N_query * (pixel_query / pixel_ref))
 
         # Downsample query_vol_copy_ds from N_query to N_query_ds:
         print_to_log(log,
-                     f"{get_time_stamp(t1)} Downsampling the reference volume to grid size {N_query_ds},{N_query_ds},{N_query_ds}",
+                     f"{get_time_stamp(t1)} Downsampling the query volume to grid size {N_query_ds},{N_query_ds},{N_query_ds}",
                      show_log=show_log)
         query_vol_copy_ds = cryo_downsample(query_vol_copy, (N_query_ds, N_query_ds, N_query_ds))
 
