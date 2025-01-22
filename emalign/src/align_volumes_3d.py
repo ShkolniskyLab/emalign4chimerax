@@ -45,7 +45,7 @@ def align_volumes(vol1, vol2, starting_t=None, opt=None, show_log=True, session=
                          Use larger value if alignment fails.
         opt.Nprojs - Number of projections to use for the alignment. Defult is 30.
     """
-    np.random.seed(114)
+    # np.random.seed(114)
 
     # Check options:
     Nprojs, align_in_place, downsample, log, starting_t, mask = check_options(opt, session, starting_t)
@@ -101,7 +101,7 @@ def align_ds_volumes(vol1_ds, vol2_ds, Nprojs=50, starting_t=0.0, log=None, show
     output_parameters = R_est, estdx_ds, reflect, corr_v
 
     if output_parameters[3] < corr_ds_before * 1.10:
-        print_to_log(log, MSG_PREFIX + f"Switching assignment of rotation matrices and re-alignning:", show_log=show_log)
+        print_to_log(log, MSG_PREFIX + f"Switching assignment of rotation matrices and re-alignning", show_log=show_log)
         R_est_rev, R_est_J_rev = fast_alignment_3d(vol1_ds, vol2_ds, inds_to_ref, inds_to_align, Rots, Nprojs, starting_t, log=log, show_log=False)
         R_est_rev, estdx_ds_rev, reflect_rev, corr_v_rev = calculate_alignment_parameters(vol1_ds, vol2_ds, R_est_rev, R_est_J_rev)
         if corr_v_rev > corr_v:
@@ -109,7 +109,7 @@ def align_ds_volumes(vol1_ds, vol2_ds, Nprojs=50, starting_t=0.0, log=None, show
 
     if reselect_random and (output_parameters[3] < corr_ds_before * 1.10):
         # In the case where the results are still not well aligned, try another random selection and run just once more:
-        print_to_log(log, MSG_PREFIX + f"Re-alignning downsampled volumes with different rotation matrices:", show_log=show_log)
+        print_to_log(log, MSG_PREFIX + f"Re-alignning downsampled volumes with different rotation matrices", show_log=show_log)
         R_est_1, estdx_ds_1, reflect_1, corr_v_1 = align_ds_volumes(vol1_ds, vol2_ds, starting_t=starting_t, Nprojs=Nprojs, log=log, show_log=show_log, reselect_random=False)
         if corr_v_1 > output_parameters[3]:
             output_parameters = R_est_1, estdx_ds_1, reflect_1, corr_v_1

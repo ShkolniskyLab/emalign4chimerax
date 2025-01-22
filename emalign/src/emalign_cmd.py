@@ -111,7 +111,7 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             pixel_query = (N_ref / N_query) * pixel_query
             query_dict["step"] = (pixel_query, pixel_query, pixel_query)
 
-    print_to_log(log, MSG_PREFIX + f"Updated pixel sizes: pixel_ref = {round(pixel_ref, 3)}, pixel_query = {round(pixel_query, 3)}", show_log=show_log)
+        print_to_log(log, MSG_PREFIX + f"Updated pixel sizes: pixel_ref = {round(pixel_ref, 3)}, pixel_query = {round(pixel_query, 3)}", show_log=show_log)
 
     if pixel_query > pixel_ref:
         if mask:
