@@ -87,31 +87,31 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
     ref_vol_copy = ref_vol.copy()
     query_vol_copy = query_vol.copy()
 
-    # Handling the case when volumes have same pixel size but different grid size:
-    if (round(pixel_query, 3) == round(pixel_ref, 3)) and (N_query != N_ref):
-        # Calculate new pixel size for the smaller volume:
-        if N_ref < N_query:
-            # In this case we want to enlarge pixel_ref:
-            print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for reference volume",
-                         show_log=show_log)
-            pixel_ref = (N_query / N_ref) * pixel_ref
-            ref_dict["step"] = (pixel_ref, pixel_ref, pixel_ref)
-            # Create GridData object with aligned query_vol but with the original query_map parameters:
-            ref_map_grid_data = arraygrid.ArrayGridData(ref_vol.T, origin=ref_dict.get("origin"),
-                                                        step=ref_dict.get("step"),
-                                                        cell_angles=ref_dict.get("cell_angles"),
-                                                        rotation=ref_dict.get("rotation"),
-                                                        symmetries=ref_dict.get("symmetries"),
-                                                        name=ref_dict.get("name"))
-            # Replace the data in the original query_map:
-            ref_map.replace_data(ref_map_grid_data)
-        elif N_query < N_ref:
-            # In this case we want to enlarge pixel_query:
-            print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for query volume", show_log=show_log)
-            pixel_query = (N_ref / N_query) * pixel_query
-            query_dict["step"] = (pixel_query, pixel_query, pixel_query)
+    # Check the ratio between the pixels and grid sizes:
+    ref_ratio = (pixel_ref * N_ref) / N_query
+    query_ratio = (pixel_query * N_query) / N_ref
 
-        print_to_log(log, MSG_PREFIX + f"Updated pixel sizes: pixel_ref = {round(pixel_ref, 3)}, pixel_query = {round(pixel_query, 3)}", show_log=show_log)
+    # Handling a diviation of more than 1% in the pixel and grids ratios:
+    if pixel_ref * 1.01 < query_ratio:
+        # We need to enlarge the pixel_ref to query_ratio:
+        print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for reference volume",
+                     show_log=show_log)
+        pixel_ref = query_ratio
+        ref_dict["step"] = (pixel_ref, pixel_ref, pixel_ref)
+        # Create GridData object with aligned query_vol but with the original query_map parameters:
+        ref_map_grid_data = arraygrid.ArrayGridData(ref_vol.T, origin=ref_dict.get("origin"),
+                                                    step=ref_dict.get("step"),
+                                                    cell_angles=ref_dict.get("cell_angles"),
+                                                    rotation=ref_dict.get("rotation"),
+                                                    symmetries=ref_dict.get("symmetries"),
+                                                    name=ref_dict.get("name"))
+        # Replace the data in the original query_map:
+        ref_map.replace_data(ref_map_grid_data)
+    elif pixel_query * 1.01 < ref_ratio:
+        # We need to enlarge the pixel_query to ref_ratio:
+        print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for query volume", show_log=show_log)
+        pixel_query = ref_ratio
+        query_dict["step"] = (pixel_query, pixel_query, pixel_query)
 
     if pixel_query > pixel_ref:
         if mask:
