@@ -81,17 +81,13 @@ class EMalignDialog(ToolInstance):
 
     def _create_guide(self, parent):
         self._guide_panel = g = CollapsiblePanel(parent, title=None)
-        f = g.content_area
-        EntriesRow(f, ' ')
-        EntriesRow(f, 'Downsample - dimension to downsample input volumes to speed up computations. ')
-        EntriesRow(f, 'Projections - number of projections to use for alignment. ')
-        EntriesRow(f, 'Masking - using only center 90% of the volumes energy to calculate the alignment. ')
-        EntriesRow(f, '* the alignment may take a few minutes, don\'t click the screen while EMalign is running.')
 
         return g
 
     def _show_or_hide_guide(self):
-        self._guide_panel.toggle_panel_display()
+        # self._guide_panel.toggle_panel_display()
+        from chimerax.help_viewer import show_url
+        show_url(self.session, 'https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxemalign')
 
     def _create_options_gui(self, parent):
         self._options_panel = p = CollapsiblePanel(parent, title=None)
