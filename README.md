@@ -1,6 +1,6 @@
 # EMalign - ChimeraX Bundle
 
-EMalign is an algorithm for aligning rotation, reflection, and translation between volumes.
+EMalign is an algorithm for aligning maps with respect to rotation, reflection, and translation.
 
 This bundle is deigned to be installed as a plugin to ChimeraX program.
 
