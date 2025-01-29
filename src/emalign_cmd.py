@@ -87,185 +87,288 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
     ref_vol_copy = ref_vol.copy()
     query_vol_copy = query_vol.copy()
 
-    # Check the ratio between the pixels and grid sizes:
-    ref_ratio = (pixel_ref * N_ref) / N_query
-    query_ratio = (pixel_query * N_query) / N_ref
+    if round(pixel_query, 2) == round(pixel_ref, 2):
+        if N_ref != N_query:
+            # We downsample the large volume to the grid size of the small volume:
+            if N_ref > N_query:
+                # Downsample ref_vol from N_ref to N_query:
+                if mask:
+                    print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                                 show_log=show_log)
+                    optimal_radius = calc_3D_radius(ref_vol)
+                    r0_factor = optimal_radius / N_ref
 
-    # Handling a diviation of more than 1% in the pixel and grids ratios:
-    if pixel_ref * 1.01 < query_ratio:
-        # We need to enlarge the pixel_ref to query_ratio:
-        print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for reference volume",
-                     show_log=show_log)
-        pixel_ref = query_ratio
-        ref_dict["step"] = (pixel_ref, pixel_ref, pixel_ref)
-        # Create GridData object with aligned query_vol but with the original query_map parameters:
-        ref_map_grid_data = arraygrid.ArrayGridData(ref_vol.T, origin=ref_dict.get("origin"),
-                                                    step=ref_dict.get("step"),
-                                                    cell_angles=ref_dict.get("cell_angles"),
-                                                    rotation=ref_dict.get("rotation"),
-                                                    symmetries=ref_dict.get("symmetries"),
-                                                    name=ref_dict.get("name"))
-        # Replace the data in the original query_map:
-        ref_map.replace_data(ref_map_grid_data)
-    elif pixel_query * 1.01 < ref_ratio:
-        # We need to enlarge the pixel_query to ref_ratio:
-        print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for query volume", show_log=show_log)
-        pixel_query = ref_ratio
-        query_dict["step"] = (pixel_query, pixel_query, pixel_query)
-        # Create GridData object with aligned query_vol but with the original query_map parameters:
-        query_map_grid_data = arraygrid.ArrayGridData(query_vol.T, origin=query_dict.get("origin"),
-                                                      step=query_dict.get("step"),
-                                                      cell_angles=query_dict.get("cell_angles"),
-                                                      rotation=query_dict.get("rotation"),
-                                                      symmetries=query_dict.get("symmetries"),
-                                                      name=query_dict.get("name"))
-        # Replace the data in the original query_map:
-        query_map.replace_data(query_map_grid_data)
+                    m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                    m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
 
-    if pixel_query > pixel_ref:
-        if mask:
-            print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                         show_log=show_log)
-            optimal_radius = calc_3D_radius(ref_vol)
-            r0_factor = optimal_radius / N_ref
+                    ref_vol_copy = ref_vol_copy * m1
+                    query_vol_copy = query_vol_copy * m2
 
-            m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-            m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
+                print_to_log(log,
+                             f"{get_time_stamp(t1)} Downsampling the reference volume to grid size {N_query},{N_query},{N_query}",
+                             show_log=show_log)
+                ref_vol_ds = cryo_downsample(ref_vol_copy, (N_query, N_query, N_query))
 
-            ref_vol_copy = ref_vol_copy * m1
-            query_vol_copy = query_vol_copy * m2
+                opt.options = [False]
 
-        # query_vol has the bigger pixel size ---> downsample ref_vol to N_ref_ds and then crop it to N_query:
-        N_ref_ds = round(N_ref * (pixel_ref / pixel_query))
+                # At this point both volumes are the same dimension, run the alignment:
+                bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_ds,
+                                                                                           query_vol_copy,
+                                                                                           starting_t=t1,
+                                                                                           opt=opt,
+                                                                                           show_log=show_log,
+                                                                                           session=session)
+                if reflect:
+                    print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
+                    query_vol = np.flip(query_vol, axis=2)
 
-        # Downsample ref_vol from N_ref to N_ref_ds:
-        print_to_log(log,
-                     f"{get_time_stamp(t1)} Downsampling the reference volume to grid size {N_ref_ds},{N_ref_ds},{N_ref_ds}",
-                     show_log=show_log)
-        ref_vol_ds = cryo_downsample(ref_vol_copy, (N_ref_ds, N_ref_ds, N_ref_ds))
+                # Rotate the volumes:
+                print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
+                             show_log=show_log)
+                query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
 
-        # Crop ref_vol from N_ref_ds to N_query:
-        print_to_log(log,
-                     f"{get_time_stamp(t1)} Cropping the reference volume to grid size {N_query},{N_query},{N_query}",
-                     show_log=show_log)
-        ref_vol_cropped = cryo_crop(ref_vol_ds.copy(), (N_query, N_query, N_query))
+                # Translate the volumes:
+                print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
+                bestdx = (pixel_query / pixel_ref) * bestdx
+                if (np.round(bestdx) == bestdx).all():
+                    # Use fast method:
+                    query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
+                else:
+                    query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
 
-        opt.options = [False]
+                query_vol_aligned = query_vol_aligned.astype(np.float32)
+            else:
+                # Downsample query_vol_copy_ds from N_query to N_ref:
+                if mask:
+                    print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                                 show_log=show_log)
+                    optimal_radius = calc_3D_radius(query_vol)
+                    r0_factor = optimal_radius / N_query
 
-        # At this point both volumes are the same dimension, run the alignment:
-        bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_cropped,
-                                                                                   query_vol_copy,
-                                                                                   starting_t=t1,
-                                                                                   opt=opt,
-                                                                                   show_log=show_log,
-                                                                                   session=session)
-        if reflect:
-            print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
-            query_vol = np.flip(query_vol, axis=2)
+                    m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                    m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
 
-        # Rotate the volumes:
-        print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
-                     show_log=show_log)
-        query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
+                    ref_vol_copy = ref_vol_copy * m1
+                    query_vol_copy = query_vol_copy * m2
 
-        # Translate the volumes:
-        print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
-        bestdx = (pixel_query / pixel_ref) * bestdx
-        if (np.round(bestdx) == bestdx).all():
-            # Use fast method:
-            query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
+                print_to_log(log,
+                             f"{get_time_stamp(t1)} Downsampling the query volume to grid size {N_ref},{N_ref},{N_ref}",
+                             show_log=show_log)
+                query_vol_copy_ds = cryo_downsample(query_vol_copy, (N_ref, N_ref, N_ref))
+
+                opt.options = [False]
+
+                bestR, bestdx, reflect, vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
+                                                                                     query_vol_copy_ds,
+                                                                                     starting_t=t1,
+                                                                                     opt=opt,
+                                                                                     show_log=show_log,
+                                                                                     session=session)
+
+                if reflect:
+                    print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
+                    query_vol = np.flip(query_vol, axis=2)
+
+                # Rotate the volumes:
+                print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
+                             show_log=show_log)
+                query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
+
+                # Translate the volumes:
+                print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
+                bestdx = (pixel_ref / pixel_query) * bestdx
+                if (np.round(bestdx) == bestdx).all():
+                    # Use fast method:
+                    query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
+                else:
+                    query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
+
+                query_vol_aligned = query_vol_aligned.astype(np.float32)
         else:
-            query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
+            if mask:
+                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                             show_log=show_log)
+                optimal_radius = calc_3D_radius(query_vol)
+                r0_factor = optimal_radius / N_query
 
-        query_vol_aligned = query_vol_aligned.astype(np.float32)
+                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
 
-    elif pixel_ref > pixel_query:  # ref_vol has the bigger pixel size and the smaller volume size
-        if mask:
-            print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                         show_log=show_log)
-            optimal_radius = calc_3D_radius(query_vol)
-            r0_factor = optimal_radius / N_query
+                ref_vol_copy = ref_vol_copy * m1
+                query_vol_copy = query_vol_copy * m2
 
-            m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-            m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
+            opt.masking = mask
+            original_ref_vol = ref_vol.copy()
+            original_query_vol = query_vol.copy()
 
-            ref_vol_copy = ref_vol_copy * m1
-            query_vol_copy = query_vol_copy * m2
-
-        N_query_ds = round(N_query * (pixel_query / pixel_ref))
-
-        # Downsample query_vol_copy_ds from N_query to N_query_ds:
-        print_to_log(log,
-                     f"{get_time_stamp(t1)} Downsampling the query volume to grid size {N_query_ds},{N_query_ds},{N_query_ds}",
-                     show_log=show_log)
-        query_vol_copy_ds = cryo_downsample(query_vol_copy, (N_query_ds, N_query_ds, N_query_ds))
-
-        # Crop query_vol from N_ref_ds to N_ref:
-        print_to_log(log, f"{get_time_stamp(t1)} Cropping the query volume to grid size {N_ref},{N_ref},{N_ref}",
-                     show_log=show_log)
-        query_vol_copy_cropped = cryo_crop(query_vol_copy_ds.copy(), (N_ref, N_ref, N_ref))
-
-        opt.options = [False]
-
-        bestR, bestdx, reflect, vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
-                                                                             query_vol_copy_cropped,
-                                                                             starting_t=t1,
-                                                                             opt=opt,
-                                                                             show_log=show_log,
-                                                                             session=session)
-
-        if reflect:
-            print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
-            query_vol = np.flip(query_vol, axis=2)
-
-        # Rotate the volumes:
-        print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
-                     show_log=show_log)
-        query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
-
-        # Translate the volumes:
-        print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
-        bestdx = (pixel_ref / pixel_query) * bestdx
-        if (np.round(bestdx) == bestdx).all():
-            # Use fast method:
-            query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
-        else:
-            query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
-
-        query_vol_aligned = query_vol_aligned.astype(np.float32)
-
+            bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
+                                                                                       query_vol_copy,
+                                                                                       starting_t=t1,
+                                                                                       opt=opt,
+                                                                                       show_log=show_log,
+                                                                                       session=session,
+                                                                                       original_vol1=original_ref_vol,
+                                                                                       original_vol2=original_query_vol)
     else:
-        if mask:
-            print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+        # Check the ratio between the pixels and grid sizes:
+        ref_ratio = (pixel_ref * N_ref) / N_query
+        query_ratio = (pixel_query * N_query) / N_ref
+
+        # Handling a diviation of more than 1% in the pixel and grids ratios:
+        if pixel_ref * 1.01 < query_ratio:
+            # We need to enlarge the pixel_ref to query_ratio:
+            print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for reference volume",
                          show_log=show_log)
-            optimal_radius = calc_3D_radius(query_vol)
-            r0_factor = optimal_radius / N_query
+            pixel_ref = query_ratio
+        elif pixel_query * 1.01 < ref_ratio:
+            # We need to enlarge the pixel_query to ref_ratio:
+            print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for query volume", show_log=show_log)
+            pixel_query = ref_ratio
 
-            m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-            m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
+        if pixel_query > pixel_ref:
+            if mask:
+                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                             show_log=show_log)
+                optimal_radius = calc_3D_radius(ref_vol)
+                r0_factor = optimal_radius / N_ref
 
-            ref_vol_copy = ref_vol_copy * m1
-            query_vol_copy = query_vol_copy * m2
+                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
 
-        opt.masking = mask
-        original_ref_vol = ref_vol.copy()
-        original_query_vol = query_vol.copy()
+                ref_vol_copy = ref_vol_copy * m1
+                query_vol_copy = query_vol_copy * m2
 
-        bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
-                                                                                   query_vol_copy,
-                                                                                   starting_t=t1,
-                                                                                   opt=opt,
-                                                                                   show_log=show_log,
-                                                                                   session=session,
-                                                                                   original_vol1=original_ref_vol,
-                                                                                   original_vol2=original_query_vol)
+            # query_vol has the bigger pixel size ---> downsample ref_vol to N_ref_ds and then crop it to N_query:
+            N_ref_ds = round(N_ref * (pixel_ref / pixel_query))
+
+            # Downsample ref_vol from N_ref to N_ref_ds:
+            print_to_log(log,
+                         f"{get_time_stamp(t1)} Downsampling the reference volume to grid size {N_ref_ds},{N_ref_ds},{N_ref_ds}",
+                         show_log=show_log)
+            ref_vol_ds = cryo_downsample(ref_vol_copy, (N_ref_ds, N_ref_ds, N_ref_ds))
+
+            # Crop ref_vol from N_ref_ds to N_query:
+            print_to_log(log,
+                         f"{get_time_stamp(t1)} Cropping the reference volume to grid size {N_query},{N_query},{N_query}",
+                         show_log=show_log)
+            ref_vol_cropped = cryo_crop(ref_vol_ds.copy(), (N_query, N_query, N_query))
+
+            opt.options = [False]
+
+            # At this point both volumes are the same dimension, run the alignment:
+            bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_cropped,
+                                                                                       query_vol_copy,
+                                                                                       starting_t=t1,
+                                                                                       opt=opt,
+                                                                                       show_log=show_log,
+                                                                                       session=session)
+            if reflect:
+                print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
+                query_vol = np.flip(query_vol, axis=2)
+
+            # Rotate the volumes:
+            print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
+                         show_log=show_log)
+            query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
+
+            # Translate the volumes:
+            print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
+            bestdx = (pixel_query / pixel_ref) * bestdx
+            if (np.round(bestdx) == bestdx).all():
+                # Use fast method:
+                query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
+            else:
+                query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
+
+            query_vol_aligned = query_vol_aligned.astype(np.float32)
+
+        elif pixel_ref > pixel_query:  # ref_vol has the bigger pixel size and the smaller volume size
+            if mask:
+                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                             show_log=show_log)
+                optimal_radius = calc_3D_radius(query_vol)
+                r0_factor = optimal_radius / N_query
+
+                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
+
+                ref_vol_copy = ref_vol_copy * m1
+                query_vol_copy = query_vol_copy * m2
+
+            N_query_ds = round(N_query * (pixel_query / pixel_ref))
+
+            # Downsample query_vol_copy_ds from N_query to N_query_ds:
+            print_to_log(log,
+                         f"{get_time_stamp(t1)} Downsampling the query volume to grid size {N_query_ds},{N_query_ds},{N_query_ds}",
+                         show_log=show_log)
+            query_vol_copy_ds = cryo_downsample(query_vol_copy, (N_query_ds, N_query_ds, N_query_ds))
+
+            # Crop query_vol from N_ref_ds to N_ref:
+            print_to_log(log, f"{get_time_stamp(t1)} Cropping the query volume to grid size {N_ref},{N_ref},{N_ref}",
+                         show_log=show_log)
+            query_vol_copy_cropped = cryo_crop(query_vol_copy_ds.copy(), (N_ref, N_ref, N_ref))
+
+            opt.options = [False]
+
+            bestR, bestdx, reflect, vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
+                                                                                 query_vol_copy_cropped,
+                                                                                 starting_t=t1,
+                                                                                 opt=opt,
+                                                                                 show_log=show_log,
+                                                                                 session=session)
+
+            if reflect:
+                print_to_log(log, f"{get_time_stamp(t1)} Flipping query volume before alignment", show_log=show_log)
+                query_vol = np.flip(query_vol, axis=2)
+
+            # Rotate the volumes:
+            print_to_log(log, f"{get_time_stamp(t1)} Applying the calculated rotation to the original volume",
+                         show_log=show_log)
+            query_vol_aligned = fastrotate3d.fastrotate3d(query_vol, bestR)
+
+            # Translate the volumes:
+            print_to_log(log, f"{get_time_stamp(t1)} Shifting the original volume\n", show_log=show_log)
+            bestdx = (pixel_ref / pixel_query) * bestdx
+            if (np.round(bestdx) == bestdx).all():
+                # Use fast method:
+                query_vol_aligned = reshift_vol.reshift_vol_int(query_vol_aligned, bestdx)
+            else:
+                query_vol_aligned = reshift_vol.reshift_vol(query_vol_aligned, bestdx)
+
+            query_vol_aligned = query_vol_aligned.astype(np.float32)
+
+        else:
+            if mask:
+                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                             show_log=show_log)
+                optimal_radius = calc_3D_radius(query_vol)
+                r0_factor = optimal_radius / N_query
+
+                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
+                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
+
+                ref_vol_copy = ref_vol_copy * m1
+                query_vol_copy = query_vol_copy * m2
+
+            opt.masking = mask
+            original_ref_vol = ref_vol.copy()
+            original_query_vol = query_vol.copy()
+
+            bestR, bestdx, reflect, query_vol_aligned = align_volumes_3d.align_volumes(ref_vol_copy,
+                                                                                       query_vol_copy,
+                                                                                       starting_t=t1,
+                                                                                       opt=opt,
+                                                                                       show_log=show_log,
+                                                                                       session=session,
+                                                                                       original_vol1=original_ref_vol,
+                                                                                       original_vol2=original_query_vol)
 
     t2 = time.perf_counter()
     print_to_log(log, f"Aligning the volumes using EMalign took {t2 - t1:.2f} seconds\n")
     print_param(log, bestR, bestdx, reflect, show_param)
 
     # Create GridData object with aligned query_vol but with the original query_map parameters:
-    aligned_map_grid_data = arraygrid.ArrayGridData(query_vol_aligned.T, origin=query_dict.get("origin"),
+    aligned_map_grid_data = arraygrid.ArrayGridData(query_vol_aligned.T, origin=ref_dict.get("origin"),
                                                     step=query_dict.get("step"),
                                                     cell_angles=query_dict.get("cell_angles"),
                                                     rotation=query_dict.get("rotation"),
@@ -299,6 +402,9 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
         overlap, corr, corr_m = calculate_stats(query_map, ref_map, False)
         print_to_log(log, f"correlation = {corr:.4f}, correlation about mean = {corr_m:.4f}, overlap = {overlap:.3f}")
         print_to_log(log, "-" * 88)
+
+    if ref_dict.get("origin") != query_dict.get("origin"):
+        print_to_log(log, "NOTICE: query volume origin changed from " + str(query_dict.get("origin")) + " to " + str(ref_dict.get("origin")))
 
 
 # -------------------------------------------------------------------------------------------------------------------- #
