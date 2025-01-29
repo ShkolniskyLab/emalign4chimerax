@@ -112,6 +112,15 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
         print_to_log(log, f"{get_time_stamp(t1)} Calculating new pixel size for query volume", show_log=show_log)
         pixel_query = ref_ratio
         query_dict["step"] = (pixel_query, pixel_query, pixel_query)
+        # Create GridData object with aligned query_vol but with the original query_map parameters:
+        query_map_grid_data = arraygrid.ArrayGridData(query_vol.T, origin=query_dict.get("origin"),
+                                                      step=query_dict.get("step"),
+                                                      cell_angles=query_dict.get("cell_angles"),
+                                                      rotation=query_dict.get("rotation"),
+                                                      symmetries=query_dict.get("symmetries"),
+                                                      name=query_dict.get("name"))
+        # Replace the data in the original query_map:
+        query_map.replace_data(query_map_grid_data)
 
     if pixel_query > pixel_ref:
         if mask:
@@ -278,7 +287,8 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
 
     print_to_log(log, "-" * 88)
     print_to_log(log, "Stats before alignment:")
-    print_to_log(log, f"correlation = {corr_before:.4f}, correlation about mean = {corr_m_before:.4f}, overlap = {overlap_before:.3f}")
+    print_to_log(log,
+                 f"correlation = {corr_before:.4f}, correlation about mean = {corr_m_before:.4f}, overlap = {overlap_before:.3f}")
     print_to_log(log, "-" * 88)
     print_to_log(log, "Stats after alignning with EMalign:")
     print_to_log(log, f"correlation = {corr:.4f}, correlation about mean = {corr_m:.4f}, overlap = {overlap:.3f}")
