@@ -1,5 +1,17 @@
 import numpy as np
 from scipy.special import erf
+from scipy.ndimage import binary_dilation
+
+
+def automask(volume, threshold):
+    mask = np.zeros(volume.data.shape)
+    mask[volume.data > threshold] = 1
+    struct_elem = np.ones((3, 3, 3), dtype=np.uint8)
+    dilated_mask = binary_dilation(mask, structure=struct_elem)
+    dilated_mask = binary_dilation(dilated_mask, structure=struct_elem)
+    dilated_mask = binary_dilation(dilated_mask, structure=struct_elem)
+    masked_volume = volume.data * dilated_mask
+    return masked_volume
 
 
 def cart2pol(x, y):

@@ -7,7 +7,7 @@ from chimerax.map_data import arraygrid
 from chimerax.core.errors import UserError
 from . import align_volumes_3d, reshift_vol, fastrotate3d
 from .common_finufft import cryo_downsample, cryo_crop
-from .utils import fuzzy_mask
+from .utils import automask
 
 MSG_PREFIX = "_______ | "
 
@@ -87,23 +87,19 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
     ref_vol_copy = ref_vol.copy()
     query_vol_copy = query_vol.copy()
 
+    if mask:
+        print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+                     show_log=show_log)
+        ref_vol_threshold = ref_map.minimum_surface_level
+        query_vol_threshold = query_map.minimum_surface_level
+        ref_vol_copy = automask(ref_vol_copy, ref_vol_threshold)
+        query_vol_copy = automask(query_vol_copy, query_vol_threshold)
+
     if round(pixel_query, 2) == round(pixel_ref, 2):
         if N_ref != N_query:
             # We downsample the large volume to the grid size of the small volume:
             if N_ref > N_query:
                 # Downsample ref_vol from N_ref to N_query:
-                if mask:
-                    print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                                 show_log=show_log)
-                    optimal_radius = calc_3D_radius(ref_vol)
-                    r0_factor = optimal_radius / N_ref
-
-                    m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                    m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                    ref_vol_copy = ref_vol_copy * m1
-                    query_vol_copy = query_vol_copy * m2
-
                 print_to_log(log,
                              f"{get_time_stamp(t1)} Downsampling the reference volume to grid size {N_query},{N_query},{N_query}",
                              show_log=show_log)
@@ -139,18 +135,6 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
                 query_vol_aligned = query_vol_aligned.astype(np.float32)
             else:
                 # Downsample query_vol_copy_ds from N_query to N_ref:
-                if mask:
-                    print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                                 show_log=show_log)
-                    optimal_radius = calc_3D_radius(query_vol)
-                    r0_factor = optimal_radius / N_query
-
-                    m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                    m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                    ref_vol_copy = ref_vol_copy * m1
-                    query_vol_copy = query_vol_copy * m2
-
                 print_to_log(log,
                              f"{get_time_stamp(t1)} Downsampling the query volume to grid size {N_ref},{N_ref},{N_ref}",
                              show_log=show_log)
@@ -185,18 +169,6 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
 
                 query_vol_aligned = query_vol_aligned.astype(np.float32)
         else:
-            if mask:
-                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                             show_log=show_log)
-                optimal_radius = calc_3D_radius(query_vol)
-                r0_factor = optimal_radius / N_query
-
-                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                ref_vol_copy = ref_vol_copy * m1
-                query_vol_copy = query_vol_copy * m2
-
             opt.masking = mask
             original_ref_vol = ref_vol.copy()
             original_query_vol = query_vol.copy()
@@ -226,18 +198,6 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             pixel_query = ref_ratio
 
         if pixel_query > pixel_ref:
-            if mask:
-                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                             show_log=show_log)
-                optimal_radius = calc_3D_radius(ref_vol)
-                r0_factor = optimal_radius / N_ref
-
-                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                ref_vol_copy = ref_vol_copy * m1
-                query_vol_copy = query_vol_copy * m2
-
             # query_vol has the bigger pixel size ---> downsample ref_vol to N_ref_ds and then crop it to N_query:
             N_ref_ds = round(N_ref * (pixel_ref / pixel_query))
 
@@ -283,18 +243,6 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             query_vol_aligned = query_vol_aligned.astype(np.float32)
 
         elif pixel_ref > pixel_query:  # ref_vol has the bigger pixel size and the smaller volume size
-            if mask:
-                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                             show_log=show_log)
-                optimal_radius = calc_3D_radius(query_vol)
-                r0_factor = optimal_radius / N_query
-
-                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                ref_vol_copy = ref_vol_copy * m1
-                query_vol_copy = query_vol_copy * m2
-
             N_query_ds = round(N_query * (pixel_query / pixel_ref))
 
             # Downsample query_vol_copy_ds from N_query to N_query_ds:
@@ -338,18 +286,6 @@ def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=Fal
             query_vol_aligned = query_vol_aligned.astype(np.float32)
 
         else:
-            if mask:
-                print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
-                             show_log=show_log)
-                optimal_radius = calc_3D_radius(query_vol)
-                r0_factor = optimal_radius / N_query
-
-                m1 = fuzzy_mask([N_ref, N_ref, N_ref], dtype=np.float32, r0=r0_factor * N_ref)
-                m2 = fuzzy_mask([N_query, N_query, N_query], dtype=np.float32, r0=r0_factor * N_query)
-
-                ref_vol_copy = ref_vol_copy * m1
-                query_vol_copy = query_vol_copy * m2
-
             opt.masking = mask
             original_ref_vol = ref_vol.copy()
             original_query_vol = query_vol.copy()
