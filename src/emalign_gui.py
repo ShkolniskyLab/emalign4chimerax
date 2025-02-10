@@ -125,7 +125,7 @@ class EMalignDialog(ToolInstance):
         self._display_log_frame = log.frame
 
         # Create option to use masking before alignning:
-        mask = EntriesRow(f, False, 'Use masking (recommended only for noisier data)')
+        mask = EntriesRow(f, True, 'Use masking (threshold: contour level of each map)')
         self._masking = mask.values[0]
         self._masking_frame = mask.frame
 

@@ -77,7 +77,7 @@ def align_volumes(vol1, vol2, starting_t=None, opt=None, show_log=True, session=
     return bestR, bestdx, reflect, vol2aligned
 
 
-def align_ds_volumes(vol1_ds, vol2_ds, Nprojs=50, starting_t=0.0, log=None, show_log=False, reselect_random=True):
+def align_ds_volumes(vol1_ds, vol2_ds, Nprojs=25, starting_t=0.0, log=None, show_log=False, reselect_random=True):
     corr_ds_before = round(calculate_chimerax_correlation(vol1_ds, vol2_ds, center_data=False), 4)
     if reselect_random:
         print_to_log(log, MSG_PREFIX + f"Alignning downsampled volumes:", show_log=show_log)
@@ -321,7 +321,7 @@ def check_options(opt, session, starting_t):
     if hasattr(opt, 'Nprojs'):
         Nprojs = opt.Nprojs
     else:
-        Nprojs = 50
+        Nprojs = 25
 
     if hasattr(opt, 'downsample'):
         downsample = opt.downsample

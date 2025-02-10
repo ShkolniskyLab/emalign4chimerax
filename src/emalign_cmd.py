@@ -35,7 +35,7 @@ def register_emalign_command(logger):
     register('volume emalign', emalign_desc, emalign, logger=logger)
 
 
-def emalign(session, ref_map, query_map, downsample=64, projections=50, mask=False, show_log=True, show_param=True,
+def emalign(session, ref_map, query_map, downsample=64, projections=25, mask=False, show_log=True, show_param=True,
             refine=False):
     log = session.logger
 
