@@ -4,7 +4,7 @@ When uploaded to the ChimeraX toolshed, the bundle will be displayed without the
 -->
 
 <BundleInfo name="ChimeraX-EMalign"
-	    version="0.1.1" package="chimerax.emalign"
+	    version="0.1.2" package="chimerax.emalign"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
