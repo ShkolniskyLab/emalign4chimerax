@@ -88,7 +88,7 @@ def emalign(session, ref_map, query_map, downsample=64, projections=25, mask=Fal
     query_vol_copy = query_vol.copy()
 
     if mask:
-        print_to_log(log, f"{get_time_stamp(t1)} Using masking to align center 90% of the volumes energy",
+        print_to_log(log, f"{get_time_stamp(t1)} Using masking to align volumes above contour levels",
                      show_log=show_log)
         ref_vol_threshold = ref_map.minimum_surface_level
         query_vol_threshold = query_map.minimum_surface_level
