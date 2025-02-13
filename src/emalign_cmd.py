@@ -90,8 +90,8 @@ def emalign(session, ref_map, query_map, downsample=64, projections=25, mask=Fal
     if mask:
         print_to_log(log, f"{get_time_stamp(t1)} Using masking to align volumes above contour levels",
                      show_log=show_log)
-        ref_vol_threshold = ref_map.minimum_surface_level
-        query_vol_threshold = query_map.minimum_surface_level
+        ref_vol_threshold = np.float64(ref_map.minimum_surface_level)
+        query_vol_threshold = np.float64(query_map.minimum_surface_level)
         ref_vol_copy = automask(ref_vol_copy, ref_vol_threshold)
         query_vol_copy = automask(query_vol_copy, query_vol_threshold)
 
